@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent"
+    android:orientation="vertical" >
+
+    <LinearLayout
+        android:id="@+id/topView"
+        style="@style/row"
+        android:background="#20232a" >
+        <Button
+            android:layout_margin="10dp"
+            android:id="@+id/button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Show react fragment" />
+
+        <Button
+            android:layout_margin="10dp"
+            android:id="@+id/button2"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Send msg from native to react native" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/bottomView"
+        style="@style/row"
+        android:background="#fff">
+        <FrameLayout
+            android:id="@+id/reactNativeFragment"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </LinearLayout>
+</LinearLayout>
