@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
 import "@ethersproject/shims";
 import EncryptedStorage from "react-native-encrypted-storage";
+// import * as Keychain from 'react-native-keychain';
+import base64 from 'base64-js'
 
-import { Wallet, ethers } from "ethers";
+import { Wallet, ethers, utils, keccak256, recoverAddress } from "ethers";
 
 import {
   StyleSheet,
@@ -13,6 +15,23 @@ import {
   DeviceEventEmitter,
 } from "react-native";
 import Title from "../components/Title";
+
+//new
+// Define the domain separator
+const domainSeparator =
+  "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)";
+// Define the message types
+const messageTypes =
+  '{"Person":[{"name":"name","type":"string"},{"name":"wallet","type":"address"}]}';
+// Define the primary type
+const primaryType = "Person";
+// Define the message data
+const messageData = {
+  name: "Alice",
+  wallet: "0x123456789...",
+};
+
+//end new
 
 const domain = {
   name: "My App",
@@ -49,6 +68,81 @@ const wallet_key_storage = "WalletKey";
 const mnemonic_key_storage = "MnemonicKey";
 const url = "http://10.0.2.2:3001/eth-signer/";
 
+function createEIP712Message(
+  domainSeparator,
+  messageTypes,
+  primaryType,
+  messageData
+) {
+  const domainSeparatorHash = ethers.utils.keccak256(
+    ethers.utils.toUtf8Bytes(domainSeparator)
+  );
+  const typesHash = ethers.utils.keccak256(
+    ethers.utils.toUtf8Bytes(messageTypes)
+  );
+  const primaryTypeHash = ethers.utils.keccak256(
+    ethers.utils.toUtf8Bytes(primaryType)
+  );
+  const messageHash = getMessageDataHash(
+    domainSeparatorHash,
+    primaryType,
+    messageData
+  );
+
+  const concatenatedBytes = concatenateByteArrays(
+    domainSeparatorHash,
+    typesHash,
+    primaryTypeHash,
+    messageHash
+  );
+  const result = ethers.utils.keccak256(concatenatedBytes);
+  return result;
+}
+
+function getMessageDataHash(domainSeparatorHash, primaryType, messageData) {
+  const stringBuilder = [
+    String.fromCharCode(0x19),
+    String.fromCharCode(0x01),
+    String.fromCharCode(0x01),
+    utils.hexlify(domainSeparatorHash),
+    encodeType(primaryType, messageData),
+    encodeData(primaryType, messageData),
+  ].join("");
+
+  return ethers.utils.keccak256(utils.toUtf8Bytes(stringBuilder));
+}
+
+function encodeType(primaryType, messageData) {
+  let typeString = `${primaryType}(`;
+  for (const key of Object.keys(messageData)) {
+    typeString += `${key},`;
+  }
+  typeString = typeString.slice(0, -1); // Remove trailing comma
+  typeString += ")";
+  return typeString;
+}
+
+function encodeData(primaryType, messageData) {
+  let dataString = "";
+  for (const key of Object.keys(messageData)) {
+    dataString += `${getTypeData(primaryType, key)}:${messageData[key]},`;
+  }
+  dataString = dataString.slice(0, -1); // Remove trailing comma
+  return dataString;
+}
+
+function getTypeData(primaryType, key) {
+  return `${primaryType}.${key}`;
+}
+
+function concatenateByteArrays(...arrays) {
+  const concatenatedArray = [];
+  for (const array of arrays) {
+    concatenatedArray.push(...array);
+  }
+  return Uint8Array.from(concatenatedArray);
+}
+
 export default function HelloWorld() {
   const [signature, setSignature] = useState("");
   const [signerAddress, setSignerAddress] = useState("");
@@ -56,14 +150,42 @@ export default function HelloWorld() {
 
   useEffect(() => {
     DeviceEventEmitter.addListener("customEventName", function (e) {
-      // handle event and you will get a value in event object, you can log it here
-      console.log(e);
+      console.log("customEventName", e);
     });
   }, []);
 
-  const handleClick = () => {
+  const sendSimpleMsgFromRn = () => {
     NativeModules.CommunicationModule.sendMessageToNative("MSG FROM RN");
   };
+
+  const signAndVerifiedMessage = async () => {
+    try {
+      const signaturePromise = new Promise((resolve) => {
+        const eventListener = (signature) => {
+          const hash = utils.keccak256(utils.toUtf8Bytes('Hello, World!'));
+          const verifiedAddress = utils.recoverAddress(hash, {
+            r: `0x${signature.r}`,
+            s: `0x${signature.s}`,
+            v: `0x${signature.v}`,
+          });
+  
+          console.log('verifiedAddress:', verifiedAddress);
+          resolve(verifiedAddress);
+        };
+  
+        DeviceEventEmitter.addListener('SignatureDataEvent', eventListener);
+      });
+
+      await NativeModules.Biometrics.createKeys({
+        allowDeviceCredentials: true,
+        message: "Hello world",
+      });
+
+      return await signaturePromise;
+    } catch (err) {
+      console.log(err)
+    }
+  }
 
   const removeWallet = async () => {
     try {
@@ -110,6 +232,10 @@ export default function HelloWorld() {
 
   const getOrGenerateWallet = async () => {
     const wallet = await EncryptedStorage.getItem(wallet_key_storage);
+    console.log("!!!", wallet);
+    if (wallet) {
+      console.log("@@@", wallet.privateKey);
+    }
 
     if (!wallet) {
       console.log("Generate wallet");
@@ -120,19 +246,40 @@ export default function HelloWorld() {
   };
 
   const signMessage = async () => {
+    // await removeWallet()
     console.log("signMessage");
     await getOrGenerateWallet();
 
-    const mnemonic = await getMnemonic();
-    const fromMnemonic = ethers.Wallet.fromMnemonic(mnemonic.mnemonicPhrase);
-    const address = await fromMnemonic.getAddress();
+    const testPrivateKey =
+      "0x10bebaa85ac304f3234dc443e08ab53710a32b4c3e762ce522afef1f5bf8283f";
 
-    const signature = await fromMnemonic._signTypedData(domain, types, mail);
+    const walletFromPrivateKey = new ethers.Wallet(testPrivateKey);
+    console.log(
+      "walletFromPrivateKey address",
+      walletFromPrivateKey.getAddress()
+    );
 
-    console.log("signMessage signature", signature);
+    // Create the EIP-712 message
+    const message = createEIP712Message(
+      domainSeparator,
+      messageTypes,
+      primaryType,
+      messageData
+    );
 
-    setSignature(signature);
-    setSignerAddress(address);
+    // Sign the message with a private key
+    const signingKey = new ethers.utils.SigningKey(testPrivateKey);
+    const signature = signingKey.signDigest(message);
+
+    // Sign the typed data
+
+    // Print the EIP-712 signature
+    console.log("EIP-712 Signature:", signature);
+    console.log("EIP-712", signature.r.toString(16));
+    console.log("EIP-712", signature.s.toString(16));
+    console.log("EIP-712", signature.v.toString(16));
+
+   
   };
 
   const verifyMessage = async () => {
@@ -148,13 +295,21 @@ export default function HelloWorld() {
     setIsValid(isValid);
   };
 
+
   return (
     <View style={styles.container}>
       <TouchableOpacity
-        onPress={handleClick}
+        onPress={sendSimpleMsgFromRn}
         style={{ backgroundColor: "green", marginBottom: 10 }}
       >
-        <Title title="Send msg" />
+        <Title title="Send msg from rn" />
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        onPress={signAndVerifiedMessage}
+        style={{ backgroundColor: "green", marginBottom: 10 }}
+      >
+        <Title title="sign and verified message" />
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -170,6 +325,13 @@ export default function HelloWorld() {
       >
         <Title title="Verify message" />
       </TouchableOpacity>
+
+      {/* <TouchableOpacity
+        onPress={testKeyChain}
+        style={{ backgroundColor: "orange" }}
+      >
+        <Title title="Test keychain" />
+      </TouchableOpacity> */}
       <Text
         style={{ color: "#fff", textAlign: "center", margin: 10, fontSize: 16 }}
       >

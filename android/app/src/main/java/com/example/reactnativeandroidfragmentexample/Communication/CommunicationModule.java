@@ -27,6 +27,6 @@ public class CommunicationModule extends ReactContextBaseJavaModule {
 
     @ReactMethod
     public static void sendMessageToNative(String payload) {
-        Log.d("EVENT send from RN", payload);
+        Log.d("EVENT received from RN", payload);
     }
 }

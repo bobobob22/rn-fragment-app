@@ -3,6 +3,7 @@ package com.example.reactnativeandroidfragmentexample;
 import android.app.Application;
 import android.util.Log;
 
+import com.example.reactnativeandroidfragmentexample.Biometrics.BiometricsPackage;
 import com.facebook.react.PackageList;
 import com.facebook.react.ReactApplication;
 import com.facebook.react.ReactNativeHost;
@@ -32,6 +33,7 @@ public class MyReactApplication extends Application implements ReactApplication 
             // Packages that cannot be autolinked yet can be added manually here
 
             packages.add(new CommunicationModulePackage());
+            packages.add(new BiometricsPackage());
             return packages;
         }
     };
